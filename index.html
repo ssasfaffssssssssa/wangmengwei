@@ -104,8 +104,12 @@ body.entered .opening{opacity:0;visibility:hidden;pointer-events:none}
 .modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:22px;background:rgba(4,1,8,.74);backdrop-filter:blur(16px);opacity:0;visibility:hidden;pointer-events:none;transition:.26s ease}
 .modal.open{opacity:1;visibility:visible;pointer-events:auto}
 .modalCard{position:relative;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(300px,.72fr);gap:22px;width:min(1120px,96vw);max-height:88vh;border:1px solid rgba(255,229,243,.24);border-radius:32px;background:linear-gradient(135deg,rgba(22,8,27,.88),rgba(8,2,13,.78));box-shadow:0 44px 130px rgba(0,0,0,.66);overflow:hidden}
-.modalImageWrap{min-height:64vh;background:#05020a;display:grid;place-items:center}
-.modalImageWrap img{max-width:100%;max-height:86vh;width:100%;height:100%;object-fit:contain;display:block}
+.modalImageWrap{position:relative;min-height:64vh;background:#05020a;display:grid;place-items:center;overflow:hidden}
+.modalImageWrap:after{content:"";position:absolute;width:76px;height:76px;border-radius:999px;border:1px solid rgba(255,224,240,.24);border-top-color:rgba(255,123,190,.85);box-shadow:0 0 34px rgba(255,123,190,.28);opacity:0;transform:scale(.86);transition:.22s ease;animation:modalSpin 1.05s linear infinite;pointer-events:none}
+.modalImageWrap.loading:after{opacity:1;transform:scale(1)}
+.modalImageWrap img{max-width:100%;max-height:86vh;width:100%;height:100%;object-fit:contain;display:block;transition:opacity .24s ease,filter .24s ease}
+.modalImageWrap.loading img{opacity:.24;filter:blur(10px) saturate(.74)}
+@keyframes modalSpin{to{transform:rotate(360deg)}}
 .modalText{padding:clamp(24px,4vw,44px);overflow:auto}
 .modalText .mk{color:#ffbadc;font:900 11px/1.5 ui-sans-serif,system-ui,"PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.26em;text-transform:uppercase;margin-bottom:16px}
 .modalText h3{margin:0 0 16px;color:#ffe8bf;font-size:clamp(28px,3vw,48px);line-height:1.15;letter-spacing:.06em}
@@ -230,10 +234,9 @@ body.letterReading .centerCopy, body.letterReading .storyPanel{filter:blur(1px);
   .openCard .to{font-size:10px!important;letter-spacing:.16em!important;}
   .primaryBtn{max-width:100%;white-space:normal;line-height:1.35;padding:13px 18px!important;}
 }
-
 </style>
 <meta name="description" content="写给 WMW 小朋友的六一浪漫纪念相册。">
-<!-- Optimized Pages build: external images/audio, mobile-light particles. -->
+<!-- Final local optimization build: external assets, mobile-light particles. -->
 </head>
 <body>
 <div class="loading" id="loading"><div class="loadBox"><h2>WMW</h2><p>正在把给 WMW 小朋友的六一礼物装进星河里...</p><div class="loadTrack"><div class="loadFill" id="loadFill"></div></div></div></div>
@@ -325,6 +328,8 @@ function buildCards(){
     const el=document.createElement('div'); el.className='photoCard'; el.dataset.index=i;
     el.innerHTML=`<div class="photoInner"><img src="${it.thumbImage||it.image}" alt="${it.title}" loading="eager"><div class="photoTag">${it.tag}</div><div class="photoTitle">${it.title}</div><div class="photoFooter"><span>OPEN LARGE</span><span>${String(i+1).padStart(2,'0')}</span></div><div class="photoHint">CLICK TO OPEN</div></div>`;
     el.addEventListener('click',e=>{e.stopPropagation(); openModal(i)});
+    el.addEventListener('pointerenter',()=>preloadFullImage(it.image));
+    el.addEventListener('touchstart',()=>preloadFullImage(it.image),{passive:true});
     dom.stage.appendChild(el); cards.push(el);
   });
 }
@@ -362,8 +367,12 @@ function setFinalAudioMode(on){
 function updateScroll(){const max=document.documentElement.scrollHeight-innerHeight; pTarget=max>0?clamp(scrollY/max,0,1):0; if(Math.abs(pTarget-pCurrent)>.24)pCurrent=pTarget; if(pTarget>.018) document.body.classList.add('entered')}
 function animate(){pCurrent += (pTarget-pCurrent)*(viewport().mobile?.18:.12); applyCards(); updateText(pCurrent); drawFx(pCurrent); updateMusicUi(); requestAnimationFrame(animate)}
 function scrollToProgress(p){const max=document.documentElement.scrollHeight-innerHeight; window.scrollTo({top:max*p,behavior:'smooth'})}
-function openModal(i){if(modalOpen)return; const it=ALBUM[i]||{}; modalOpen=true; document.body.classList.add('lock'); dom.modalImage.src=it.image||''; dom.modalImage.alt=it.title||'WMW 的照片'; dom.modalTitle.textContent=it.title||'这一刻'; dom.modalNote.textContent=it.note||''; dom.modalDate.textContent=it.date||''; dom.modalMemory.textContent=it.memory||it.note||''; dom.modalKicker.textContent='[ 写给 WMW 的这一刻 · '+String(i+1).padStart(2,'0')+' ]'; dom.modal.classList.add('open')}
-function closeModal(){modalOpen=false; document.body.classList.remove('lock'); dom.modal.classList.remove('open')}
+const imageCache=new Map();
+function preloadFullImage(src){if(!src)return Promise.resolve(null); if(imageCache.has(src))return imageCache.get(src); const p=new Promise(resolve=>{const img=new Image(); img.decoding='async'; img.onload=()=>{const done=()=>resolve(img); img.decode?img.decode().then(done).catch(done):done()}; img.onerror=()=>resolve(null); img.src=src}); imageCache.set(src,p); return p}
+function warmFullImages(){const idle=window.requestIdleCallback||((fn)=>setTimeout(fn,700)); idle(()=>ALBUM.forEach((it,i)=>setTimeout(()=>preloadFullImage(it.image),i*95)))}
+function fillModalCopy(i,it){dom.modalTitle.textContent=it.title||'这一刻'; dom.modalNote.textContent=it.note||''; dom.modalDate.textContent=it.date||''; dom.modalMemory.textContent=it.memory||it.note||''; dom.modalKicker.textContent='[ 写给 WMW 的这一刻 · '+String(i+1).padStart(2,'0')+' ]'}
+function openModal(i){if(modalOpen)return; const it=ALBUM[i]||{}; const full=it.image||it.thumbImage||'', thumb=it.thumbImage||full; modalOpen=true; document.body.classList.add('lock'); dom.modalImage.closest('.modalImageWrap').classList.add('loading'); dom.modalImage.dataset.full=full; dom.modalImage.alt=it.title||'WMW 的照片'; dom.modalImage.src=thumb; fillModalCopy(i,it); dom.modal.classList.add('open'); preloadFullImage(full).then(img=>{if(!modalOpen||dom.modalImage.dataset.full!==full)return; if(img)dom.modalImage.src=full; dom.modalImage.closest('.modalImageWrap').classList.remove('loading')}); [i-1,i+1].forEach(n=>ALBUM[n]&&preloadFullImage(ALBUM[n].image))}
+function closeModal(){modalOpen=false; document.body.classList.remove('lock'); dom.modal.classList.remove('open'); dom.modalImage.closest('.modalImageWrap').classList.remove('loading')}
 function toggleMusicPlayback(){pulseMusicPanel(); if(localMode&&dom.audio&&!dom.audio.paused){fadeAudioTo(0,450); setTimeout(()=>{dom.audio.pause(); setMusicPlaying(false)},520); return} if(localMode&&dom.audio){showMusicRitual(); dom.audio.volume=0; dom.audio.play().then(()=>{fadeAudioTo(finalAudioDucked?MUSIC_DUCK:MUSIC_NORMAL,1600); setMusicPlaying(true)}).catch(()=>{if(dom.musicToggle)dom.musicToggle.textContent='轻点一下，开启这首歌'}); return} if(audioCtx){toggleGeneratedMusic(); return} startMusic()}
 function setupEvents(){
   buildAudioWave();
@@ -414,7 +423,7 @@ function drawFx(p){if(!ctx)return; ctx.clearRect(0,0,innerWidth,innerHeight); co
   for(let k=0;k<18;k++){const a=k/18*Math.PI*2+t*.12; const hp=heartPoint(a,scale*(.72+.08*Math.sin(t+k)),cx,cy); drawBlossom(ctx,hp[0],hp[1],mobile?4.2:6.2,a+t,show*(.13+.08*Math.sin(t*1.1+k)))}
   ctx.restore();
 }
-function boot(){try{setupLoading(); buildCards(); buildRail(); initParticles(); setupEvents(); updateScroll(); animate();}catch(e){document.body.classList.add('error'); dom.debug.textContent='初始化错误：'+(e&&e.message?e.message:e)}}
+function boot(){try{setupLoading(); buildCards(); buildRail(); warmFullImages(); initParticles(); setupEvents(); updateScroll(); animate();}catch(e){document.body.classList.add('error'); dom.debug.textContent='初始化错误：'+(e&&e.message?e.message:e)}}
 boot();
 })();
 </script>
