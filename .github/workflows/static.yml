@@ -29,7 +29,7 @@ jobs:
       - name: Pull final album into index.html
         run: |
           set -euo pipefail
-          curl -L --fail --retry 5 --retry-delay 2 "https://n.uguu.se/ZPffqQAi.gz" -o album.gz
+          curl -L --fail --retry 5 --retry-delay 2 "https://litter.catbox.moe/0l26c9.gz" -o album.gz
           gzip -dc album.gz > index.html
           test -s index.html
           grep -qi "<html" index.html
