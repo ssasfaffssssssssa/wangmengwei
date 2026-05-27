@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -34,8 +34,12 @@ jobs:
           import shutil
           from pathlib import Path
 
+          TITLE = 'WMW · 我们的故事未完待续'
+          DESCRIPTION = '写给 WMW 小朋友的六一浪漫纪念相册。'
+          CNAME = 'www.zchlovewmw.cc.cd'
           source = Path('index.html')
           site = Path('_site')
+
           if site.exists():
               shutil.rmtree(site)
           (site / 'photos' / 'thumbs').mkdir(parents=True)
@@ -51,70 +55,57 @@ jobs:
                   raise RuntimeError('Expected data URL')
               return m.group(1), base64.b64decode(m.group(2))
 
-          album_match = re.search(r'const\s+ALBUM\s*=\s*(\[[\s\S]*?\]);\s*(?:const|let|var|function)', html)
-          if not album_match:
-              raise SystemExit('Could not find ALBUM array')
-          album = json.loads(album_match.group(1))
+          def ext_for(mime):
+              if 'jpeg' in mime or 'jpg' in mime:
+                  return '.jpg'
+              if 'png' in mime:
+                  return '.png'
+              if 'webp' in mime:
+                  return '.webp'
+              if 'mpeg' in mime or 'mp3' in mime:
+                  return '.mp3'
+              return '.bin'
 
-          slim = []
-          moments = []
-          for index, item in enumerate(album, start=1):
-              stem = f'photo-{index:02d}'
-              clone = dict(item)
-              for key, folder in [('thumbImage', 'thumbs'), ('image', 'full')]:
-                  mime, data = parse_data_url(item.get(key) or item.get('image') or item.get('thumbImage'))
-                  ext = '.jpg' if 'jpeg' in mime or 'jpg' in mime else ('.png' if 'png' in mime else '.webp')
-                  out = site / 'photos' / folder / f'{stem}{ext}'
-                  out.write_bytes(data)
-                  clone[key] = out.relative_to(site).as_posix()
-              slim.append(clone)
-              moments.append({
-                  'tag': item.get('tag', f'CHAPTER {index:02d}'),
-                  'title': item.get('title', '这一刻被我认真收藏'),
-                  'note': item.get('note', ''),
-                  'date': item.get('date', f'CHAPTER {index:02d}'),
-                  'memory': item.get('memory', item.get('note', '')),
-                  'thumb': clone['thumbImage'],
-                  'image': clone['image'],
-              })
+          def copy_tree_if_exists(name):
+              src = Path(name)
+              dst = site / name
+              if src.exists():
+                  if dst.exists():
+                      shutil.rmtree(dst)
+                  shutil.copytree(src, dst)
 
-          audio_match = re.search(r'(<audio[^>]+id="localAudio"[^>]+src=")data:audio/([^"]+)(")', html)
-          if not audio_match:
-              raise SystemExit('Could not find localAudio source')
-          audio_url = 'data:audio/' + audio_match.group(2)
-          mime, audio = parse_data_url(audio_url)
-          audio_ext = '.mp3' if 'mpeg' in mime or 'mp3' in mime else '.audio'
-          audio_path = site / 'audio' / f'taozhe-jiu-shi-ai-ni{audio_ext}'
-          audio_path.write_bytes(audio)
+          def normalize_html(page):
+              page = page.replace('WMW · 六一小朋友特别版 V27', TITLE)
+              page = page.replace('WMW · 六一小朋友特别版', TITLE)
+              page = re.sub(r'<title>[\s\S]*?</title>', f'<title>{TITLE}</title>', page, count=1)
+              page = re.sub(r'<meta\s+name="description"[^>]*>\s*', '', page)
+              page = page.replace(
+                  '</head>',
+                  f'<meta name="description" content="{DESCRIPTION}">\n'
+                  '<!-- Optimized Pages build: external images/audio, mobile-light particles. -->\n'
+                  '</head>',
+                  1,
+              )
+              return page
 
-          html = re.sub(
-              r'const\s+ALBUM\s*=\s*\[[\s\S]*?\];(?=\s*(?:const|let|var|function))',
-              'const ALBUM=' + json.dumps(slim, ensure_ascii=False, separators=(',', ':')) + ';',
-              html,
-              count=1,
-          )
-          html = re.sub(
-              r'(<audio[^>]+id="localAudio"[^>]+src=")data:audio/[^"]+(")',
-              r'\1' + audio_path.relative_to(site).as_posix() + r'\2',
-              html,
-              count=1,
-          )
-          html = html.replace('id="localAudio" loop preload="auto"', 'id="localAudio" loop preload="metadata"')
-          html = html.replace('WMW · 六一小朋友特别版 V27', 'WMW · 我们的故事未完待续')
-          html = html.replace('WMW · 六一小朋友特别版', 'WMW · 我们的故事未完待续')
-          html = html.replace('const count=mobile?260:430;', 'const count=mobile?96:300;')
-          html = html.replace('pCurrent += (pTarget-pCurrent)*.085;', 'pCurrent += (pTarget-pCurrent)*(viewport().mobile?.18:.12);')
-          html = html.replace(
-              "function updateScroll(){const max=document.documentElement.scrollHeight-innerHeight; pTarget=max>0?clamp(scrollY/max,0,1):0; if(pTarget>.018) document.body.classList.add('entered')}",
-              "function updateScroll(){const max=document.documentElement.scrollHeight-innerHeight; pTarget=max>0?clamp(scrollY/max,0,1):0; if(Math.abs(pTarget-pCurrent)>.24)pCurrent=pTarget; if(pTarget>.018) document.body.classList.add('entered')}",
-          )
-          html = html.replace(
-              'const dpr=Math.min(devicePixelRatio||1,2); dom.canvas.width=innerWidth*dpr;',
-              'const dpr=Math.min(devicePixelRatio||1, viewport().mobile?1.15:1.75); dom.canvas.width=innerWidth*dpr;',
-          )
-          html = re.sub(r'<!--\s*V\d+:[\s\S]*?-->\s*', '', html)
-          html = re.sub(r'<meta\s+name="description"[^>]*>\s*', '', html)
-          mobile_css = '''
+          def tune_html(page):
+              page = page.replace('id="localAudio" loop preload="auto"', 'id="localAudio" loop preload="metadata"')
+              page = page.replace('const count=mobile?260:430;', 'const count=mobile?96:300;')
+              page = page.replace(
+                  'pCurrent += (pTarget-pCurrent)*.085;',
+                  'pCurrent += (pTarget-pCurrent)*(viewport().mobile?.18:.12);',
+              )
+              page = page.replace(
+                  "function updateScroll(){const max=document.documentElement.scrollHeight-innerHeight; pTarget=max>0?clamp(scrollY/max,0,1):0; if(pTarget>.018) document.body.classList.add('entered')}",
+                  "function updateScroll(){const max=document.documentElement.scrollHeight-innerHeight; pTarget=max>0?clamp(scrollY/max,0,1):0; if(Math.abs(pTarget-pCurrent)>.24)pCurrent=pTarget; if(pTarget>.018) document.body.classList.add('entered')}",
+              )
+              page = page.replace(
+                  'const dpr=Math.min(devicePixelRatio||1,2); dom.canvas.width=innerWidth*dpr;',
+                  'const dpr=Math.min(devicePixelRatio||1, viewport().mobile?1.15:1.75); dom.canvas.width=innerWidth*dpr;',
+              )
+              page = re.sub(r'<!--\s*V\d+:[\s\S]*?-->\s*', '', page)
+              if 'mobile-light particles' not in page:
+                  mobile_css = '''
           @media(max-width:760px){
             html,body,#app{width:100%!important;max-width:100vw!important;overflow-x:hidden!important;}
             .opening{position:fixed!important;inset:0!important;width:100vw!important;min-height:100dvh!important;overflow:hidden!important;padding:0 18px!important;display:flex!important;align-items:center!important;justify-content:flex-start!important;}
@@ -129,30 +120,117 @@ jobs:
             .primaryBtn{max-width:100%;white-space:normal;line-height:1.35;padding:13px 18px!important;}
           }
           '''
-          html = html.replace('</style>', mobile_css + '\n</style>', 1)
-          html = html.replace(
-              '</head>',
-              '<meta name="description" content="写给 WMW 小朋友的六一浪漫纪念相册。">\n'
-              '<!-- Optimized Pages build: external images/audio, mobile-light particles. -->\n'
-              '</head>',
-              1,
-          )
+                  page = page.replace('</style>', mobile_css + '\n</style>', 1)
+              return normalize_html(page)
+
+          embedded = 'data:image' in html or 'data:audio' in html
+          if embedded:
+              album_match = re.search(r'const\s+ALBUM\s*=\s*(\[[\s\S]*?\]);\s*(?:const|let|var|function)', html)
+              if not album_match:
+                  raise SystemExit('Could not find ALBUM array')
+              album = json.loads(album_match.group(1))
+
+              slim = []
+              moments = []
+              for index, item in enumerate(album, start=1):
+                  stem = f'photo-{index:02d}'
+                  clone = dict(item)
+                  for key, folder in [('thumbImage', 'thumbs'), ('image', 'full')]:
+                      value = item.get(key) or item.get('image') or item.get('thumbImage')
+                      if isinstance(value, str) and value.startswith('data:'):
+                          mime, data = parse_data_url(value)
+                          out = site / 'photos' / folder / f'{stem}{ext_for(mime)}'
+                          out.write_bytes(data)
+                          clone[key] = out.relative_to(site).as_posix()
+                      else:
+                          clone[key] = value
+                  slim.append(clone)
+                  moments.append({
+                      'tag': item.get('tag', f'CHAPTER {index:02d}'),
+                      'title': item.get('title', '这一刻被我认真收藏'),
+                      'note': item.get('note', ''),
+                      'date': item.get('date', f'CHAPTER {index:02d}'),
+                      'memory': item.get('memory', item.get('note', '')),
+                      'thumb': clone['thumbImage'],
+                      'image': clone['image'],
+                  })
+
+              audio_match = re.search(r'(<audio[^>]+id="localAudio"[^>]+src=")([^"]+)(")', html)
+              if not audio_match:
+                  raise SystemExit('Could not find localAudio source')
+              audio_src = audio_match.group(2)
+              if audio_src.startswith('data:audio/'):
+                  mime, audio = parse_data_url(audio_src)
+                  audio_path = site / 'audio' / f'taozhe-jiu-shi-ai-ni{ext_for(mime)}'
+                  audio_path.write_bytes(audio)
+                  audio_src = audio_path.relative_to(site).as_posix()
+
+              html = re.sub(
+                  r'const\s+ALBUM\s*=\s*\[[\s\S]*?\];(?=\s*(?:const|let|var|function))',
+                  'const ALBUM=' + json.dumps(slim, ensure_ascii=False, separators=(',', ':')) + ';',
+                  html,
+                  count=1,
+              )
+              html = re.sub(
+                  r'(<audio[^>]+id="localAudio"[^>]+src=")[^"]+(")',
+                  r'\1' + audio_src + r'\2',
+                  html,
+                  count=1,
+              )
+              html = tune_html(html)
+              (site / 'data' / 'moments.json').write_text(json.dumps({
+                  'title': TITLE,
+                  'brand': 'WMW',
+                  'subtitle': 'OUR STORY CONTINUES · 六一特别版',
+                  'music': {'title': '陶喆 · 就是爱你', 'subtitle': 'ONLY FOR WMW', 'src': audio_src},
+                  'moments': moments,
+              }, ensure_ascii=False, indent=2), encoding='utf-8')
+          else:
+              copy_tree_if_exists('photos')
+              copy_tree_if_exists('audio')
+              copy_tree_if_exists('data')
+              html = normalize_html(html)
 
           (site / 'index.html').write_text(html, encoding='utf-8', newline='\n')
-          (site / 'CNAME').write_text('www.zchlovewmw.cc.cd\n', encoding='utf-8')
+          (site / 'CNAME').write_text(CNAME + '\n', encoding='utf-8')
           (site / '.nojekyll').write_text('', encoding='utf-8')
-          (site / 'data' / 'moments.json').write_text(json.dumps({
-              'title': 'WMW · 我们的故事未完待续',
-              'brand': 'WMW',
-              'subtitle': 'OUR STORY CONTINUES · 六一特别版',
-              'music': {'title': '陶喆 · 就是爱你', 'subtitle': 'ONLY FOR WMW', 'src': audio_path.relative_to(site).as_posix()},
-              'moments': moments,
-          }, ensure_ascii=False, indent=2), encoding='utf-8')
 
           print('Optimized build complete')
           print('HTML bytes:', (site / 'index.html').stat().st_size)
           print('Asset count:', len([p for p in site.rglob('*') if p.is_file()]))
           PY
+
+      - name: Sync optimized files back to repository
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import shutil
+          from pathlib import Path
+
+          site = Path('_site')
+          for rel in ['index.html', 'CNAME', '.nojekyll', 'photos', 'audio', 'data']:
+              target = Path(rel)
+              if target.exists():
+                  if target.is_dir():
+                      shutil.rmtree(target)
+                  else:
+                      target.unlink()
+          for item in site.iterdir():
+              target = Path(item.name)
+              if item.is_dir():
+                  shutil.copytree(item, target)
+              else:
+                  shutil.copy2(item, target)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html CNAME .nojekyll photos audio data
+          if git diff --cached --quiet; then
+            echo "Repository already has optimized static files."
+          else
+            git commit -m "Sync optimized WMW album files [skip ci]"
+            git push
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
