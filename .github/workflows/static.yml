@@ -1,5 +1,5 @@
-# Temporary workflow: fetch the final WMW album, commit it as index.html, then deploy Pages
-name: Deploy WMW album to Pages
+# Simple workflow for deploying static content to GitHub Pages
+name: Deploy static content to Pages
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -24,27 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-      - name: Pull final album into index.html
-        run: |
-          set -euo pipefail
-          curl -L --fail --retry 5 --retry-delay 2 "https://litter.catbox.moe/0l26c9.gz" -o album.gz
-          gzip -dc album.gz > index.html
-          test -s index.html
-          grep -qi "<html" index.html
-      - name: Commit final album into repository
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          if git diff --cached --quiet; then
-            echo "index.html already up to date"
-          else
-            git commit -m "Deploy WMW final album [skip ci]"
-            git push
-          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
