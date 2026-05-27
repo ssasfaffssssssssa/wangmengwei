@@ -1,4 +1,4 @@
-# Simple workflow for deploying static content to GitHub Pages
+# Temporary workflow: update the album title, commit index.html, then deploy Pages
 name: Deploy static content to Pages
 
 on:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -24,6 +24,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Update document title
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          old = '<title>WMW · 六一小朋友特别版 V27</title>'
+          new = '<title>WMW · 我们的故事未完待续</title>'
+          if old not in text and new not in text:
+              raise SystemExit('expected title not found')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+      - name: Commit title change
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo "title already up to date"
+          else
+            git commit -m "Update album title [skip ci]"
+            git push
+          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
